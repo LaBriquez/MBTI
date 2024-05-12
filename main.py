@@ -1,13 +1,11 @@
-from discord.ext.commands import Context
-import re
-from MBTITest import MBTITest
 import discord
-from discord.abc import Messageable
+from discord import Interaction
 from discord.ext import commands
 
-bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
+from MBTI import analize_side_content, force_side, mbti_values, analize_NS, analize_TF, get_doc, get_blob, get_sia
+from corrector import valid_message, correct
 
-tester = MBTITest()
+bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
 
 
 @bot.event
@@ -16,70 +14,79 @@ async def on_ready():
     print(f'Logged in as {bot.user.name}')
 
 
-@bot.command(name="mbti")
-@discord.app_commands.describe(user="first value", nbr="number")
-async def mbti(ctx: Context, user: str, nbr: int = 100):
-    iduser = 0
+@bot.tree.command(name="mbti", description="send mbti")
+@discord.app_commands.describe(user="user")
+async def mbti(ctx: Interaction, user: str = ""):
     try:
-        iduser = int(user.replace("<", "").replace(">", "").replace("@", ""))
-    except:
-        await ctx.send(f'need a user')
-
-    messages: Messageable.history = ctx.channel.history(limit=nbr)
-
-    backtick_pattern = r'```[^`]+```'
-
-    mention_pattern = r'<@[^>]+>'
-
-    url_pattern = r'https?://\S+'
-
-    combined_pattern = f'({backtick_pattern}|{url_pattern}|{mention_pattern})'
-
-    res = [ln for ln in
-           [re.sub(combined_pattern, '', line.content) async for line in messages if line.author.id == iduser
-            and not line.content.startswith("/") and not line.content.startswith(".")
-            and not line.content.startswith("!")
-            ] if len(ln) != 0]
-
-    if len(res) == 0:
-        await ctx.send(f'no messages')
+        id = int(user.replace("<@", "").replace(">", "")) \
+            if user != "" else ctx.user.id
+    except Exception as e:
+        await ctx.response.send_message(f"need a valid user")
         return
 
-    base_values = {'E': 0.0, 'I': 0.0, 'N': 0.0, 'S': 0.0, 'T': 0.0, 'F': 0.0, 'J': 0.0, 'P': 0.0}
+    if id not in force_side.keys():
+        await ctx.response.send_message(f"there is no <@{id}> on the holocrons")
+        return
 
-    for ln in res:
-        tester.MBTIadder(base_values, ln)
-
-    """ein = (base_values["I"] ** 2 + base_values["E"] ** 2) ** 0.5
-    nsn = (base_values["N"] ** 2 + base_values["S"] ** 2) ** 0.5
-    ftn = (base_values["F"] ** 2 + base_values["T"] ** 2) ** 0.5
-    pjn = (base_values["P"] ** 2 + base_values["J"] ** 2) ** 0.5
-
-    eival = f"E ({int(base_values['E'] / ein * 100)}%)" if base_values["I"] < base_values["E"] \
-        else f"I ({int(base_values['I'] / ein * 100)}%)"
-
-    nsval = f"N ({int(base_values['N'] / nsn * 100)}%)" if base_values["S"] < base_values["N"] \
-        else f"S ({int(base_values['S'] / nsn * 100)}%)"
-
-    tfval = f"T ({int(base_values['T'] / ftn * 100)}%)" if base_values["F"] < base_values["T"] \
-        else f"F ({int(base_values['F'] / ftn * 100)}%)"
-
-    pjval = f"P ({int(base_values['P'] / pjn * 100)}%)" if base_values["J"] < base_values["P"] \
-        else f"J ({int(base_values['J'] / pjn * 100)}%)"""
-
-    eival = f"E ({int(base_values['E'])}|{int(base_values['I'])})" if base_values["I"] < base_values["E"] \
-        else f"I ({int(base_values['I'])}|{int(base_values['E'])})"
-
-    nsval = f"N ({int(base_values['N'])}|{int(base_values['S'])})" if base_values["S"] < base_values["N"] \
-        else f"S ({int(base_values['S'])}|{int(base_values['N'])}"
-
-    tfval = f"T ({int(base_values['T'])}|{int(base_values['F'])})" if base_values["F"] < base_values["T"] \
-        else f"F ({int(base_values['F'])}|{int(base_values['T'])})"
-
-    pjval = f"P ({int(base_values['P'])}|{int(base_values['J'])})" if base_values["J"] < base_values["P"] \
-        else f"J ({int(base_values['J'])}|{int(base_values['P'])})"
-
-    await ctx.send(f'{eival} {nsval} {tfval} {pjval} for {len(res)} messages')
+    await ctx.response.send_message(f"<@{id}> : {mbti_values[id]}")
 
 
-bot.run("MTA3NzMwMDkyNTgxNjkxMzk0MA.G3SR-C.LfWDQ03AlXsI3JkuW189fePlD8iUOihxLyFoB8")
+@bot.tree.command(name="side", description="send side")
+@discord.app_commands.describe(user="user")
+async def side(ctx: Interaction, user: str = ""):
+    try:
+        id = int(user.replace("<@", "").replace(">", "")) \
+            if user != "" else ctx.user.id
+    except Exception as e:
+        await ctx.response.send_message(f"need a valid user")
+        return
+
+    if id not in force_side.keys():
+        await ctx.response.send_message(f"there is no <@{id}> on the holocrons")
+        return
+
+    side = force_side[id]
+    print(side)
+
+    compound = side['compound'] / side['total']
+
+    img = ("images/Jedi.jpg", "is a great and powerful jedi") if compound > 0.55 \
+        else ("images/Sith.jpg", "has fallen to the dark side") if compound < 0.45 \
+        else ("images/GreyJedi.jpg", "is a grey jedi balanced in the force")
+
+    await ctx.response.send_message(f"<@{id}> {img[1]} ({int(compound * 100)}%)", file=discord.File(open(img[0], 'rb')))
+
+
+@bot.event
+async def on_message(message: discord.message.Message):
+    if not valid_message(message):
+        return
+
+    content = correct(message.content)
+    print(content)
+
+    analize_side_content(message, content)
+
+    if message.author.id not in mbti_values.keys():
+        mbti_values[message.author.id] = {
+            "N": 0.0,
+            "S": 0.0,
+            "T": 0.0,
+            "F": 0.0
+        }
+
+    doc = get_doc(content)
+    blob = get_blob(content)
+    sia = get_sia(content)
+
+    s, n = analize_NS(doc)
+    f, t = analize_TF(doc, blob, sia)
+
+    mbti_values[message.author.id]["N"] += n
+    mbti_values[message.author.id]["S"] += s
+
+    mbti_values[message.author.id]["F"] += f
+    mbti_values[message.author.id]["T"] += t
+
+
+bot.run("MTIzNzMzNDExMjYzMzc1MzYwMA.Gj4fFG.hsPPHbtyCkHb5sRDqQW-jWZwmGQYnFcW0TRZ7Y")
